@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import connectDB from './config/index.js';
 import steganographyRoutes from './routes/steganography.route.js'; // Fixed import
 import errorHandler from './middlewares/error.middleware.js'; // Fixed import
+import encodeRouter from './api/encodeController.js';
+import algorithmsRouter from './api/algorithmsController.js';
 
 dotenv.config();
 
@@ -14,13 +16,25 @@ const app = express();
 connectDB();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173', // Vite's default port
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Steganography API is running' });
+});
+
 // Routes
 app.use('/api/steganography', steganographyRoutes);
+app.use('/api', encodeRouter);
+app.use('/api', algorithmsRouter);
 
 // Error Handler
 app.use(errorHandler);

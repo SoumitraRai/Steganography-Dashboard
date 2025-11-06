@@ -1,0 +1,45 @@
+import express from 'express';
+import multer from 'multer';
+import { encodeLSB, decodeLSB } from '../algorithms/lsb.js';
+const router = express.Router();
+const upload = multer();
+
+// POST /api/encode
+router.post('/encode', upload.single('image'), async (req, res) => {
+  try {
+    const imageFile = req.file;
+    const payloadText = req.body.payload || '';
+    const bitsPerChannel = parseInt(req.body.bitsPerChannel || '1', 10);
+    const encryptPass = req.body.passphrase || null;
+
+    if (!imageFile) return res.status(400).json({ error: 'image required' });
+    const payloadBuffer = Buffer.from(payloadText, 'utf8');
+    const opts = { bitsPerChannel, channels: [0, 1, 2] };
+    if (encryptPass) opts.encrypt = { passphrase: encryptPass };
+
+    const { stegoBuffer, metrics } = await encodeLSB(imageFile.buffer, payloadBuffer, opts);
+    // return base64 PNG so frontend can preview easily
+    res.json({ imageBase64: stegoBuffer.toString('base64'), mime: 'image/png', metrics });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/decode
+router.post('/decode', upload.single('image'), async (req, res) => {
+  try {
+    const imageFile = req.file;
+    const bitsPerChannel = parseInt(req.body.bitsPerChannel || '1', 10);
+    const passphrase = req.body.passphrase || null;
+    if (!imageFile) return res.status(400).json({ error: 'image required' });
+
+    const { payload } = await decodeLSB(imageFile.buffer, { bitsPerChannel, channels: [0,1,2], passphrase });
+    res.json({ payload: payload.toString('utf8') });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
