@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import crypto from 'crypto';
 import { buildHeader, parseHeader, encryptWithPassphrase, decryptWithPassphrase } from '../utils/cryptoHeader.js';
+import { detectImageFormat, compressEncodedImage, createMetricsResponse } from '../utils/imageCompression.js';
 
 /**
  * DWT (Discrete Wavelet Transform) Steganography
@@ -166,6 +167,9 @@ async function encodeDWT(inputImageBuffer, payloadBuffer, options = {}) {
   const bitsPerChannel = options.bitsPerChannel || 1;
   const encryptOpt = options.encrypt || null;
 
+  // Detect original image format and size
+  const originalMetrics = await detectImageFormat(inputImageBuffer);
+
   // Optional encryption
   let plaintext = Buffer.from(payloadBuffer);
   let headerObj;
@@ -245,10 +249,20 @@ async function encodeDWT(inputImageBuffer, payloadBuffer, options = {}) {
     }
   }
 
-  // Output as PNG
-  const outBuffer = await sharp(modifiedData, {
-    raw: { width, height, channels }
-  }).png().toBuffer();
+  // Output with optimized compression
+  // Use targetFormat if pre-conversion was applied, otherwise use original format
+  const formatToUse = options.targetFormat || originalMetrics.format;
+  const quality = options.quality || 90;
+  const { buffer: outBuffer, format: outputFormat, metrics: compressionMetrics } = await compressEncodedImage(
+    modifiedData,
+    { width, height, channels },
+    {
+      originalFormat: formatToUse,
+      quality,
+      algorithm: 'dwt',
+      originalSize: originalMetrics.size
+    }
+  );
 
   const metrics = {
     width,
@@ -256,7 +270,9 @@ async function encodeDWT(inputImageBuffer, payloadBuffer, options = {}) {
     capacityBits,
     usedBits: payloadBits.length,
     bitsPerChannel,
-    algorithm: 'DWT'
+    algorithm: 'DWT',
+    outputFormat,
+    ...compressionMetrics
   };
 
   return { stegoBuffer: outBuffer, metrics };

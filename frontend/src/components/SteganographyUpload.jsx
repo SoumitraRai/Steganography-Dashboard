@@ -21,6 +21,8 @@ export default function SteganographyUpload({ algorithm = "LSB" }) {
     const [message, setMessage] = useState("");
     const [passphrase, setPassphrase] = useState("");
     const [bitsPerChannel, setBitsPerChannel] = useState(1);
+    const [outputFormat, setOutputFormat] = useState("webp"); // requested output (webp/avif/original)
+    const [quality, setQuality] = useState(85); // compression quality hint
     const [mode, setMode] = useState("encode"); // encode or decode
     const [status, setStatus] = useState("idle");
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -86,6 +88,12 @@ export default function SteganographyUpload({ algorithm = "LSB" }) {
             }
             
             formData.append("bitsPerChannel", bitsPerChannel.toString());
+
+            // Optional output format + quality
+            if (mode === "encode" && outputFormat) {
+                formData.append("outputFormat", outputFormat);
+                formData.append("quality", quality.toString());
+            }
             
             if (passphrase) {
                 formData.append("passphrase", passphrase);
@@ -157,7 +165,17 @@ export default function SteganographyUpload({ algorithm = "LSB" }) {
         if (result?.type === "image") {
             const link = document.createElement("a");
             link.href = `data:${result.mime};base64,${result.data}`;
-            link.download = `stego_${file.name}`;
+
+            // Infer extension from MIME so downloads match requested format
+            const mimeToExt = {
+                "image/webp": "webp",
+                "image/avif": "avif",
+                "image/png": "png",
+                "image/jpeg": "jpg",
+            };
+            const ext = mimeToExt[result.mime] || file.name.split('.').pop() || 'png';
+            const baseName = file.name.replace(/\.[^.]+$/, '');
+            link.download = `stego_${baseName}.${ext}`;
             link.click();
         }
     };
@@ -233,6 +251,45 @@ export default function SteganographyUpload({ algorithm = "LSB" }) {
                         disabled={isProcessing}
                     />
                 </div>
+
+                {mode === "encode" && (
+                    <>
+                        <div className="form-group">
+                            <label htmlFor="output-format-select">
+                                Output Format
+                                <span className="info-text"> - Pre-convert and encode into this format</span>
+                            </label>
+                            <select
+                                id="output-format-select"
+                                value={outputFormat}
+                                onChange={(e) => setOutputFormat(e.target.value)}
+                                disabled={isProcessing}
+                            >
+                                <option value="">Original (no conversion)</option>
+                                <option value="webp">WebP</option>
+                                <option value="avif">AVIF</option>
+                            </select>
+                        </div>
+
+                        {outputFormat && (
+                            <div className="form-group">
+                                <label htmlFor="quality-input">
+                                    Quality (0-100)
+                                    <span className="info-text"> - Higher = larger size, better quality</span>
+                                </label>
+                                <input
+                                    id="quality-input"
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={quality}
+                                    onChange={(e) => setQuality(Math.min(100, Math.max(1, parseInt(e.target.value) || 80)))}
+                                    disabled={isProcessing}
+                                />
+                            </div>
+                        )}
+                    </>
+                )}
 
                 <div className="form-group">
                     <label htmlFor="passphrase-input">

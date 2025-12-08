@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import crypto from 'crypto';
 import { buildHeader, parseHeader, encryptWithPassphrase, decryptWithPassphrase } from '../utils/cryptoHeader.js';
+import { detectImageFormat, compressEncodedImage, createMetricsResponse } from '../utils/imageCompression.js';
 
 function bytesToBits(buf) {
   const bits = [];
@@ -35,6 +36,9 @@ async function encodeLSB(inputImageBuffer, payloadBuffer, options = {}) {
   const bitsPerChannel = options.bitsPerChannel || 1;
   const channels = options.channels || [0, 1, 2];
   const encryptOpt = options.encrypt || null;
+
+  // Detect original image format and size
+  const originalMetrics = await detectImageFormat(inputImageBuffer);
 
   // optional encryption
   let plaintext = Buffer.from(payloadBuffer);
@@ -80,9 +84,20 @@ async function encodeLSB(inputImageBuffer, payloadBuffer, options = {}) {
   }
 
   // compose PNG output (lossless to preserve embedded bits)
-  const outBuffer = await sharp(data, {
-    raw: { width, height, channels: ch }
-  }).png().toBuffer();
+  // Apply optimized compression
+  // Use targetFormat if pre-conversion was applied, otherwise use original format
+  const formatToUse = options.targetFormat || originalMetrics.format;
+  const quality = options.quality || 85;
+  const { buffer: outBuffer, format: outputFormat, metrics: compressionMetrics } = await compressEncodedImage(
+    data,
+    { width, height, channels: ch },
+    {
+      originalFormat: formatToUse,
+      quality,
+      algorithm: 'lsb',
+      originalSize: originalMetrics.size
+    }
+  );
 
   // metrics: simple capacity and used bits
   const metrics = {
@@ -90,7 +105,9 @@ async function encodeLSB(inputImageBuffer, payloadBuffer, options = {}) {
     height,
     capacityBits,
     usedBits: payloadBits.length,
-    bitsPerChannel
+    bitsPerChannel,
+    outputFormat,
+    ...compressionMetrics
   };
   return { stegoBuffer: outBuffer, metrics };
 }

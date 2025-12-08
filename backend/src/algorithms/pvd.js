@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import crypto from 'crypto';
 import { buildHeader, parseHeader, encryptWithPassphrase, decryptWithPassphrase } from '../utils/cryptoHeader.js';
+import { detectImageFormat, compressEncodedImage, createMetricsResponse } from '../utils/imageCompression.js';
 
 /**
  * PVD (Pixel Value Differencing) Steganography
@@ -130,6 +131,9 @@ function extractFromPair(p1, p2) {
 async function encodePVD(inputImageBuffer, payloadBuffer, options = {}) {
   const encryptOpt = options.encrypt || null;
 
+  // Detect original image format and size
+  const originalMetrics = await detectImageFormat(inputImageBuffer);
+
   // Optional encryption
   let plaintext = Buffer.from(payloadBuffer);
   let headerObj;
@@ -185,17 +189,29 @@ async function encodePVD(inputImageBuffer, payloadBuffer, options = {}) {
     throw new Error(`Payload (${payloadBits.length} bits) exceeds PVD capacity (${totalCapacity} bits).`);
   }
 
-  // Output as PNG
-  const outBuffer = await sharp(modifiedData, {
-    raw: { width, height, channels }
-  }).png().toBuffer();
+  // Output with optimized compression
+  // Use targetFormat if pre-conversion was applied, otherwise use original format
+  const formatToUse = options.targetFormat || originalMetrics.format;
+  const quality = options.quality || 85;
+  const { buffer: outBuffer, format: outputFormat, metrics: compressionMetrics } = await compressEncodedImage(
+    modifiedData,
+    { width, height, channels },
+    {
+      originalFormat: formatToUse,
+      quality,
+      algorithm: 'pvd',
+      originalSize: originalMetrics.size
+    }
+  );
 
   const metrics = {
     width,
     height,
     capacityBits: totalCapacity,
     usedBits: bitIdx,
-    algorithm: 'PVD'
+    algorithm: 'PVD',
+    outputFormat,
+    ...compressionMetrics
   };
 
   return { stegoBuffer: outBuffer, metrics };
